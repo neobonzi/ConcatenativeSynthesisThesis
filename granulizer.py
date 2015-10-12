@@ -1,28 +1,27 @@
 import argparse
-import yaafe
 import eyed3
-import audioop
-import librosa
+import datetime
+from tqdm import *
 from pymongo import MongoClient
 from pydub import AudioSegment
 
 def main():
     args = parseArgs()
-    #grainFiles = chopSound(args)
-    zeroCrossingAnalysis(args)
-    #analyzeGrains(grainFiles, sampleRate)
+    grainMongoObjects = chopSound(args)
+    storeGrains(grainMongoObjects)
 
-def zeroCrossingAnalysis(args):
-    y, sampleRate = librosa.load(args.source)
-    print("loaded")
-    print(librosa.feature.zero_crossing_rate(y=y,hop_length=sampleRate * args.grainSize))
-    print("done")
-
-def storeGrains(grainFiles):
+def storeGrains(grains):
     client = MongoClient()
     db = client.audiograins
     collection = db.grains
-        
+    storedCount = 0    
+
+    print("Storing " + str(len(grains)) + " grains")
+    for grain in tqdm(grains):
+        collection.insert_one(grain)       
+        storedCount += 1
+
+    print("Successfully stored " + str(storedCount) + " grains")
 
 def chopSound(args):
     grains = []
@@ -30,8 +29,9 @@ def chopSound(args):
     eyed3AudioFile = eyed3.load(args.source)
     audioInfo = eyed3AudioFile.info
     audioTag = eyed3AudioFile.tag
-    
-    for audioIndex in xrange(0,len(audio), args.grainSize):
+    print("Chopping up " + str(len(audio)) + " mS audio file into " + str(args.grainSize) + " mS grains")  
+
+    for audioIndex in tqdm(xrange(0,len(audio), args.grainSize)):
         #if the grain would go past the end of the sound file, just take what's left
         if audioIndex + args.grainSize > len(audio):
             grainEnd = len(audio)
@@ -42,11 +42,30 @@ def chopSound(args):
  
         grainName = audioTag.title + '_' + str(audioIndex) + '-' + str(grainEnd) + '.mp3'
         tags = {"title": audioTag.title, "artist": audioTag.artist} 
-        grains.append(sample.export(args.destination + '/' + grainName, format="mp3",
-            tags=tags))
-        print(grains[len(grains) - 1])
+        sample.export(args.destination + '/' + grainName, format="mp3",
+            tags=tags)
+        grains.append(buildGrainMongoObject(args.destination + '/' + grainName, 
+            audioTag.title, audioTag.artist, args.grainSize))
+    return grains
 
-    return files
+def buildGrainMongoObject(fileName, title, artist, length):
+    returnObject = {}
+    if (fileName != None):
+        returnObject["file"] = fileName
+    
+    if (title != None):
+        returnObject["title"] = title
+    
+    if (artist != None):
+        returnObject["artist"] = artist
+
+    if (length != None):
+        returnObject["length"] = str(length)
+
+    returnObject["processed"] = "false"
+    returnObject["date"] = datetime.datetime.utcnow()
+    return returnObject
+
 
 def parseArgs():
     parser = argparse.ArgumentParser(description='Chop up a sound file into grains and label each with appropriate id3 tag')
