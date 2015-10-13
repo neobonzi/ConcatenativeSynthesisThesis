@@ -26,6 +26,8 @@ def storeGrains(grains):
 def chopSound(args):
     grains = []
     audio = AudioSegment.from_mp3(args.source)
+    #convert to mono!
+    audio.set_channels(1)
     eyed3AudioFile = eyed3.load(args.source)
     audioInfo = eyed3AudioFile.info
     audioTag = eyed3AudioFile.tag
@@ -43,12 +45,12 @@ def chopSound(args):
         grainName = audioTag.title + '_' + str(audioIndex) + '-' + str(grainEnd) + '.mp3'
         tags = {"title": audioTag.title, "artist": audioTag.artist} 
         sample.export(args.destination + '/' + grainName, format="mp3",
-            tags=tags)
+            tags=tags, bitrate=str(audio.frame_rate))
         grains.append(buildGrainMongoObject(args.destination + '/' + grainName, 
-            audioTag.title, audioTag.artist, args.grainSize))
+            audioTag.title, audioTag.artist, args.grainSize, audio.frame_rate, sample.frame_count()))
     return grains
 
-def buildGrainMongoObject(fileName, title, artist, length):
+def buildGrainMongoObject(fileName, title, artist, length, sampleRate, frameCount):
     returnObject = {}
     if (fileName != None):
         returnObject["file"] = fileName
@@ -59,10 +61,16 @@ def buildGrainMongoObject(fileName, title, artist, length):
     if (artist != None):
         returnObject["artist"] = artist
 
+    if (sampleRate != None):
+        returnObject["sampleRate"] = sampleRate
+
     if (length != None):
         returnObject["length"] = str(length)
 
-    returnObject["processed"] = "false"
+    if (frameCount != None):
+        returnObject["frameCount"] = str(frameCount)
+
+    returnObject["processed"] = False
     returnObject["date"] = datetime.datetime.utcnow()
     return returnObject
 
