@@ -7,7 +7,7 @@ from pydub import AudioSegment
 
 def main():
     args = parseArgs()
-    grainMongoObjects = chopSound(args)
+    grainMongoObjects = chopSound(args.source, args.grainSize, args.destination)
     storeGrains(grainMongoObjects)
 
 def storeGrains(grains):
@@ -23,31 +23,39 @@ def storeGrains(grains):
 
     print("Successfully stored " + str(storedCount) + " grains")
 
-def chopSound(args):
+def chopSound(source, grainSize, destination):
     grains = []
-    audio = AudioSegment.from_mp3(args.source)
-    #convert to mono!
-    audio.set_channels(1)
-    eyed3AudioFile = eyed3.load(args.source)
+    if (source.endswith('.mp3')):
+        mp3Audio = AudioSegment.from_mp3(source)
+        mp3Audio.export("tmp.wav", format="wav")
+        audio = AudioSegment.from_wav("tmp.wav")
+    else:
+        audio = AudioSegment.from_wav(source)
+    
+    eyed3AudioFile = eyed3.load(source)
     audioInfo = eyed3AudioFile.info
     audioTag = eyed3AudioFile.tag
-    print("Chopping up " + str(len(audio)) + " mS audio file into " + str(args.grainSize) + " mS grains")  
+    print("Chopping up " + str(len(audio)) + " mS audio file into " + str(grainSize) + " mS grains")  
 
-    for audioIndex in tqdm(xrange(0,len(audio), args.grainSize)):
+    for audioIndex in tqdm(xrange(0,len(audio), grainSize)):
         #if the grain would go past the end of the sound file, just take what's left
-        if audioIndex + args.grainSize > len(audio):
+        if audioIndex + grainSize > len(audio):
             grainEnd = len(audio)
             sample = audio[audioIndex:grainEnd]
         else:
-            grainEnd = audioIndex + args.grainSize
+            grainEnd = audioIndex + grainSize
             sample = audio[audioIndex:grainEnd]
  
-        grainName = audioTag.title + '_' + str(audioIndex) + '-' + str(grainEnd) + '.mp3'
+        grainName = audioTag.title + '_' + str(audioIndex) + '-' + str(grainEnd) + '.wav'
         tags = {"title": audioTag.title, "artist": audioTag.artist} 
-        sample.export(args.destination + '/' + grainName, format="mp3",
-            tags=tags, bitrate=str(audio.frame_rate))
-        grains.append(buildGrainMongoObject(args.destination + '/' + grainName, 
-            audioTag.title, audioTag.artist, args.grainSize, audio.frame_rate, sample.frame_count()))
+        
+        if(destination is not None):
+            sample.export(destination + '/' + grainName, format="wav",
+                tags=tags, bitrate=str(audio.frame_rate))
+        
+        grains.append(buildGrainMongoObject(destination + '/' + grainName, 
+            audioTag.title, audioTag.artist, grainSize, audio.frame_rate, sample.frame_count()))
+    
     return grains
 
 def buildGrainMongoObject(fileName, title, artist, length, sampleRate, frameCount):
@@ -82,4 +90,5 @@ def parseArgs():
     parser.add_argument('grainSize', type=int, help='Length of grains in mS')
     return parser.parse_args()
 
-main()
+if __name__ == "__main__":
+    main()
