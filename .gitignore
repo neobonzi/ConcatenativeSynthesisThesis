@@ -2,6 +2,7 @@ samples/
 grains/
 featureHistograms/
 inputGrains/
+dump/
 classifier.pickle
 normalizer.pickle
 *.wav
