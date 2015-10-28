@@ -1,5 +1,6 @@
 samples/
 grains/
+featureHistograms/
 inputGrains/
 classifier.pickle
 normalizer.pickle
