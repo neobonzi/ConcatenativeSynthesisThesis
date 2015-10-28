@@ -1,3 +1,6 @@
 samples/
 grains/
 inputGrains/
+classifier.pickle
+normalizer.pickle
+*.wav
