@@ -109,14 +109,18 @@ def analyzeAllSpectralShape():
 def analyzeSpectralShape(grain):
     blockSize = grain["frameCount"]
     stepSize = grain["frameCount"]
-    fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
-    fp.addFeature('spectralShape: SpectralShapeStatistics blockSize=' + blockSize + ' stepSize=' + stepSize)
-    engine = Engine()
-    engine.load(fp.getDataFlow())
-    (rate, data) = wavfile.read(grain["file"])
-    data = numpy.array([data.astype(numpy.float64)]);
-    feats = engine.processAudio(data)
-    return (feats["spectralShape"][0][0], feats["spectralShape"][0][1], feats["spectralShape"][0][2], feats["spectralShape"][0][3])
+    #print(str(grain))
+    try:
+        fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
+        fp.addFeature('spectralShape: SpectralShapeStatistics blockSize=' + blockSize + ' stepSize=' + stepSize)
+        engine = Engine()
+        engine.load(fp.getDataFlow())
+        (rate, data) = wavfile.read(grain["file"])
+        data = numpy.array([data.astype(numpy.float64)]);
+        feats = engine.processAudio(data)
+        return (feats["spectralShape"][0][0], feats["spectralShape"][0][1], feats["spectralShape"][0][2], feats["spectralShape"][0][3])
+    except Exception:
+        print "cannot process " + str(grain)
 
 def analyzeAllEnergy():
     client = MongoClient()

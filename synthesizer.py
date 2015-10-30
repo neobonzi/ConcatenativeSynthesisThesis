@@ -2,6 +2,7 @@ from sklearn.neighbors import BallTree
 from sklearn import preprocessing
 from tqdm import *
 from pymongo import MongoClient
+from pydub import AudioSegment
 import argparse
 import sys
 import numpy as np
@@ -19,14 +20,20 @@ def main():
         process(args.template)
         
 def process(fileName):
+    client = MongoClient()
+    db = client.audiograins
+    grainEntries = db.grains
+    song = AudioSegment.empty()
+
     grains = granulizer.chopSound(fileName, 20, "inputGrains")
 
-    classifierFile = open("classifier.pickle") 
-    classifier = pickle.load(classifierFile)
-    
-    for grain in grains:
+    normalizer = pickle.load(open("normalizer.pickle"))
+    classifier = pickle.load(open("classifier.pickle"))
+    indexToIds = pickle.load(open("indexToIds.pickle"))    
+    for grain in tqdm(grains):
         #Analyze all stats for grain
-        dataPoint = np.empty([20])
+        dataPoint = np.empty([14])
+        print(str(grain))
         centroid, spread, skewness, kurtosis = analyzer.analyzeSpectralShape(grain)
         mfccs = analyzer.analyzeMFCC(grain)
         dataPoint[0] = mfccs[0]
@@ -43,14 +50,19 @@ def process(fileName):
         dataPoint[11] = mfccs[11]
         dataPoint[12] = mfccs[12]
         dataPoint[13] = analyzer.analyzePitch(grain)
-        dataPoint[14] = analyzer.analyzeEnergy(grain)
-        dataPoint[15] = kurtosis
-        dataPoint[16] = skewness
-        dataPoint[17] = spread
-        dataPoint[18] = centroid
-        dataPoint[19] = analyzer.analyzeZeroCrossingRate(grain)
-        dist, ind = classifier.query(dataPoint, k=20) 
-        print("Dist: " + str(dist) + " Ind: " + str(ind))
+        #dataPoint[14] = analyzer.analyzeEnergy(grain)
+        #dataPoint[15] = kurtosis
+        #dataPoint[16] = skewness
+        #dataPoint[17] = spread
+        #dataPoint[18] = centroid
+        #dataPoint[19] = analyzer.analyzeZeroCrossingRate(grain)
+        dist, ind = classifier.query(normalizer.transform(dataPoint), k=2) 
+        grainId = indexToIds[ind[0][0]]
+        query = grainEntries.find({"_id" : grainId})
+        grain = AudioSegment.from_wav(query[0]["file"])
+        song = song.append(grain, crossfade=2)
+
+    song.export("remix.wav", format='wav')
 
 def buildTree():
     client = MongoClient()
@@ -58,8 +70,8 @@ def buildTree():
     grainEntries = db.grains
 
     query = grainEntries.find({})
-    
-    data = np.empty([query.count(), 20])
+    indexToIds = [None] * query.count()    
+    data = np.empty([query.count(), 14])
     dataIndex = 0
     print("Building tree")
     for grain in tqdm(query):
@@ -77,12 +89,13 @@ def buildTree():
         data[dataIndex][11] = grain["mfcc11"]
         data[dataIndex][12] = grain["mfcc12"]
         data[dataIndex][13] = grain["pitch"]
-        data[dataIndex][14] = grain["energy"]
-        data[dataIndex][15] = grain["kurtosis"]
-        data[dataIndex][16] = grain["skewness"]
-        data[dataIndex][17] = grain["spread"]
-        data[dataIndex][18] = grain["centroid"]
-        data[dataIndex][19] = grain["zcr"]
+        #data[dataIndex][14] = grain["energy"]
+        #data[dataIndex][15] = grain["kurtosis"]
+        #data[dataIndex][16] = grain["skewness"]
+        #data[dataIndex][17] = grain["spread"]
+        #data[dataIndex][18] = grain["centroid"]
+        #data[dataIndex][19] = grain["zcr"]
+        indexToIds[dataIndex] = grain["_id"]
         dataIndex += 1
     
     normalizer = preprocessing.Normalizer().fit(data) 
@@ -90,6 +103,7 @@ def buildTree():
     tree = BallTree(data, leaf_size=2)
     f = open('classifier.pickle', 'wb')
     pickle.dump(normalizer, open('normalizer.pickle', 'wb'))
+    pickle.dump(indexToIds, open('indexToIds.pickle', 'wb'))
     pickle.dump(tree, f)
 
 def __parseArgs():

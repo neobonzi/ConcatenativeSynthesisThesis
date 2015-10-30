@@ -45,7 +45,9 @@ def chopSound(source, grainSize, destination):
         else:
             grainEnd = audioIndex + grainSize
             sample = audio[audioIndex:grainEnd]
- 
+        
+        if (audioTag.title is None):
+            audioTag.title = u"None"
         grainName = audioTag.title + '_' + str(audioIndex) + '-' + str(grainEnd) + '.wav'
         tags = {"title": audioTag.title, "artist": audioTag.artist} 
         
