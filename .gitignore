@@ -5,4 +5,5 @@ inputGrains/
 dump/
 classifier.pickle
 normalizer.pickle
+*.mp3
 *.wav
