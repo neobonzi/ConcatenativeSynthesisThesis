@@ -50,7 +50,7 @@ def process(fileName):
         dataPoint[11] = mfccs[11]
         dataPoint[12] = mfccs[12]
         dataPoint[13] = analyzer.analyzePitch(grain)
-        #dataPoint[14] = analyzer.analyzeEnergy(grain)
+        dataPoint[14] = analyzer.analyzeEnergy(grain)
         #dataPoint[15] = kurtosis
         #dataPoint[16] = skewness
         #dataPoint[17] = spread
