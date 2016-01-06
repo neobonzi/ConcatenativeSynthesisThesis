@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from sklearn.neighbors import BallTree
 from sklearn import preprocessing
 from sklearn.neighbors import LSHForest

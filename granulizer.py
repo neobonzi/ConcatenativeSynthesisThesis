@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import eyed3
 import datetime
