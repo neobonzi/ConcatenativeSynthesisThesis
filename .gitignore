@@ -3,6 +3,7 @@ grains/
 featureHistograms/
 inputGrains/
 dump/
+pickleBackups/
 classifier.pickle
 normalizer.pickle
 *.mp3
