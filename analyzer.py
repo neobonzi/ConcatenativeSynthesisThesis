@@ -2,6 +2,7 @@
 import sys
 import argparse
 import os
+import fpectl
 from yaafelib import *
 from aubio import pitch
 from aubio import source, pvoc, mfcc
@@ -13,6 +14,7 @@ from pymongo import MongoClient
 from pydub import AudioSegment
 
 def main():
+    fpectl.turnoff_sigfpe()
     args = parseArgs()
     if(args.clear):
         clearData()
@@ -100,7 +102,12 @@ def analyzeAllSpectralShape():
     print("Analyzing Spectral Shape for " + str(query.count()) + " grains")
 
     for grain in tqdm(query):
-        centroid, spread, skewness, kurtosis = analyzeSpectralShape(grain)
+        try:
+            print(grain["_id"])
+            centroid, spread, skewness, kurtosis = analyzeSpectralShape(grain)
+        except Exception:
+            grainEntries.remove({_id : grain["_id"]})
+            continue
         update = {"centroid" : centroid,
                   "spread"   : spread,
                   "skewness" : skewness,
