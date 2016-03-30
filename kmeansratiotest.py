@@ -17,17 +17,22 @@ estimator = KMeans(n_clusters=numClusters)
 client = MongoClient()
 db = client.audiograins
 grainEntries = db.grains
-query = grainEntries.find({})
+query = grainEntries.find({ "hratio02" : { "$exists" : True }})
 numFeatures = 20
 dataIndex = 0
 indexToFilename = [None] * query.count()
 data = np.empty([query.count(), numFeatures])
 
-numXBins = 20
+#Only consider 10 harmonic ratios
+numRatios = 2
 
 for grain in tqdm(query):
-    for binNum in range(0, numXBins):
-        data[dataIndex][binNum] = grain['binergy' + format(binNum, '02')]
+    for binNum in range(0, numRatios):
+        if data[dataIndex][binNum] < 0:
+            print("Ratio less than 0! " + str(binNum) + " its " + str(data[dataIndex][binNum]))
+            np.delete(data, dataIndex)
+            break
+        data[dataIndex][binNum] = grain['hratio' + format(binNum, '02')]
 #    data[dataIndex][0] = grain["mfcc00"]
 #    data[dataIndex][1] = grain["mfcc01"]
 #    data[dataIndex][2] = grain["mfcc02"]
@@ -75,35 +80,3 @@ for bucket in buckets:
     song.export("soundGroups/grouping" + str(bucketIndex) + ".wav", format="wav")
     bucketIndex += 1
 
-## Perform PCA
-#reduced_data = PCA(n_components=2).fit_transform(data)
-#kmeans = KMeans(init='k-means++', n_clusters=20, n_init=10)
-#kmeans.fit(reduced_data)
-#fig = plt.figure("a", figsize=(10, 8))
-#plt.clf()
-#ax = Axes3D(fig, rect=[0, 0, .95, 1], elev=48, azim=134)
-#ax.autoscale_view()
-#plt.cla()
-#labels = kmeans.labels_
-#ax.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels.astype(np.float))
-
-#ax.w_xaxis.set_ticklabels([])
-#ax.w_yaxis.set_ticklabels([])
-#ax.w_zaxis.set_ticklabels([])
-#ax.set_xlabel('Petal width')
-#ax.set_ylabel('Sepal length')
-#ax.set_zlabel('Petal length')
-
-#fig.savefig('hi.png')
-## Test the silhouette score
-#k_range = range(300, 301)
-#k_means_var = [KMeans(n_clusters=k, random_state=10) for k in k_range]
-#print("Fitting data")
-#k_labels = [clusterer.fit_predict(data) for clusterer in k_means_var]
-#print("Computing averages")
-#k_silhouette_avg = [silhouette_score(data, X) for X in k_labels]
-
-#curNumClusters = k_range[0]
-#for silhouette_score in k_silhouette_avg:
-#    print("For n_clusters=" + str(curNumClusters) + " The average silhouette_score is : " + str(silhouette_score))
-#    curNumClusters += 1

@@ -64,7 +64,7 @@ def buildLSH():
         #data[dataIndex][16] = grain["skewness"]
         #data[dataIndex][17] = grain["spread"]
         #data[dataIndex][18] = grain["centroid"]
-        data[dataIndex][15] = grain["zcr"]
+        #data[dataIndex][15] = grain["zcr"]
         indexToIds[dataIndex] = grain["_id"]
         dataIndex += 1
     

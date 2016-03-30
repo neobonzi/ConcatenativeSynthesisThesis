@@ -23,11 +23,11 @@ dataIndex = 0
 indexToFilename = [None] * query.count()
 data = np.empty([query.count(), numFeatures])
 
-numXBins = 20
+numXBins = 13
 
 for grain in tqdm(query):
     for binNum in range(0, numXBins):
-        data[dataIndex][binNum] = grain['binergy' + format(binNum, '02')]
+        data[dataIndex][binNum] = grain['mfcc' + format(binNum, '02')]
 #    data[dataIndex][0] = grain["mfcc00"]
 #    data[dataIndex][1] = grain["mfcc01"]
 #    data[dataIndex][2] = grain["mfcc02"]

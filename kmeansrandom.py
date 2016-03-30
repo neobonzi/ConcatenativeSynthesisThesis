@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from random import shuffle
+from random import randint 
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import *
 from sklearn.cluster import KMeans
@@ -23,11 +24,11 @@ dataIndex = 0
 indexToFilename = [None] * query.count()
 data = np.empty([query.count(), numFeatures])
 
-numXBins = 20
+numXBins = 13
 
 for grain in tqdm(query):
     for binNum in range(0, numXBins):
-        data[dataIndex][binNum] = grain['binergy' + format(binNum, '02')]
+        data[dataIndex][binNum] = grain['mfcc' + format(binNum, '02')]
 #    data[dataIndex][0] = grain["mfcc00"]
 #    data[dataIndex][1] = grain["mfcc01"]
 #    data[dataIndex][2] = grain["mfcc02"]
@@ -51,15 +52,15 @@ for grain in tqdm(query):
 
 print("Data pulled")
 ## Fit data, label, and put files in buckets
-estimator.fit(data)
 buckets = [None] * numClusters
-dataIndex = 0
-for label in estimator.labels_:
-    print("Label: " + str(label))
-    if buckets[label] is None:
-        buckets[label] = []
-    buckets[label].append(indexToFilename[dataIndex])
-    dataIndex += 1
+for sample in range(len(indexToFilename)):
+    randBucketNum = randint(0,numClusters - 1)
+    randSampleIndex = randint(0, len(indexToFilename) - 1)
+    if buckets[randBucketNum] is None:
+        buckets[randBucketNum] = []
+
+    buckets[randBucketNum].append(indexToFilename[randSampleIndex])
+    
 
 bucketIndex = 0
 for bucket in buckets:
