@@ -17,6 +17,7 @@ import scipy.io.wavfile as wav
 from tqdm import *
 from pymongo import MongoClient
 from pydub import AudioSegment
+import matplotlib.pyplot as plt
 
 def main():
     fpectl.turnoff_sigfpe()
@@ -344,15 +345,17 @@ def analyzeAllHarmonicRatios():
     client = MongoClient()
     db = client.audiograins
     grainEntries = db.grains
+    numHarmonics = 4
 
     query = grainEntries.find({ "hratio00" : {"$exists" : False}})
     print("Analyzing Harmonic Ratios for " + str(query.count()) + " grains")
 
     for grain in tqdm(query):
         ratios = analyzeHarmonicRatios(grain)
-        for ratioIndex in range(0, len(ratios)):
-            update = {"hratio" + format(ratioIndex, '02') : ratios[ratioIndex]}
-            grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
+        if ratios is not None:
+            for ratioIndex in range(0, len(ratios)):
+                update = {"hratio" + format(ratioIndex, '02') : ratios[ratioIndex]}
+                grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
     client.close()
 
 def analyzeHarmonicRatios(grain):
@@ -382,12 +385,26 @@ def analyzeHarmonicRatios(grain):
     
     ratios = []
 
-    for harmonicBin in xrange(mostEnergyBinIndex + mostEnergyBinIndex, min([10,len(Pxx_den)]), mostEnergyBinIndex):
+    prevEnergy = mostEnergy
+
+    for harmonicBin in xrange(mostEnergyBinIndex + mostEnergyBinIndex, len(Pxx_den), mostEnergyBinIndex):
         #print("Looking at bin " + str(harmonicBin))
-        curRatio = mostEnergy / float(Pxx_den[harmonicBin])
+        curEnergy = float(Pxx_den[harmonicBin])
+        curRatio = prevEnergy / curEnergy
+        prevEnergy = curEnergy
         #print("Bin: " + str(harmonicBin) + " with energy " + str(Pxx_den[harmonicBin]) + " ratio " + str(curRatio)) 
         ratios.append(curRatio)
 
+    # graph periodogram if we didnt get enough ratios, see whats going on
+    # also log some data
+    if (len(ratios) - 1) >= numHarmonics:
+        print("Problem with " + grain["file"] + ", number of ratios: " + str(len(ratios)))
+        print("Highest energy at " + str(f[mostEnergyBinIndex]) + " Hz with energy " + str(mostEnergy))
+        plt.semilogy(f, Pxx_den)
+        plt.xlabel('frequency [Hz]')
+        plt.ylabel('PSD [V**2/Hz]')
+        plt.savefig("figures/" + grain["file"] + ".png")
+        plt.clf()
     return ratios
 
 

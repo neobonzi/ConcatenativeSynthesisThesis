@@ -11,7 +11,6 @@ from sklearn.decomposition import PCA
 from pydub import AudioSegment
 
 numClusters = 100
-estimator = KMeans(n_clusters=numClusters)
 
 #Gather grains into numpy array
 client = MongoClient()
@@ -27,7 +26,7 @@ data = np.empty([query.count(), numFeatures])
 numRatios = 10
 
 for grain in tqdm(query):
-    for binNum in range(0, numRatios):
+    for binNum in range(2, numRatios):
         if data[dataIndex][binNum] < 0:
             print("Ratio less than 0! " + str(binNum) + " its " + str(data[dataIndex][binNum]))
             np.delete(data, dataIndex)
@@ -55,28 +54,14 @@ for grain in tqdm(query):
     dataIndex += 1
 
 print("Data pulled")
-## Fit data, label, and put files in buckets
-estimator.fit(data)
-buckets = [None] * numClusters
-dataIndex = 0
-for label in estimator.labels_:
-    print("Label: " + str(label))
-    if buckets[label] is None:
-        buckets[label] = []
-    buckets[label].append(indexToFilename[dataIndex])
-    dataIndex += 1
 
-bucketIndex = 0
-for bucket in buckets:
-    song = None
-    shuffle(bucket)
-    print("Writing sound file for bucket " + str(bucketIndex) + " With " + str(len(bucket)) + "samples")
-    for grainFile in tqdm(bucket):
-        grain = AudioSegment.from_wav(grainFile)
-        if song is None:
-            song = grain
-        else:
-            song = song.append(grain, crossfade=15)
-    song.export("soundGroups/grouping" + str(bucketIndex) + ".wav", format="wav")
-    bucketIndex += 1
+maxClusters = 100
+
+for curNumClusters in xrange(2, maxClusters, 10):
+    estimator = KMeans(n_clusters=curNumClusters)
+    estimator.fit(data)
+    silhouette_avg = silhouette_score(data, estimator.labels_)
+    print("For n_clusters = ", curNumClusters, "The average silhouette_score is :", silhouette_avg) 
+
+
 
