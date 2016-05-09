@@ -1,0 +1,4 @@
+Choral piece,
+Left out the first MFCC and left the other 12
+Much more jittery... meaning quiet and loud sounds. 
+

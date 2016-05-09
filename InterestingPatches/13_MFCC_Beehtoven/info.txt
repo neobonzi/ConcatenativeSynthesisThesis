@@ -1,0 +1,2 @@
+13 MFCC's used, 15 ms overlap, Check out Patch 0! Its all the clapping extracted!
+grouping 0 has the quieter clapping

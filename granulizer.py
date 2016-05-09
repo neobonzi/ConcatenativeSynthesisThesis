@@ -41,8 +41,7 @@ def chopSound(source, grainSize, destination):
     for audioIndex in tqdm(xrange(0,len(audio), grainSize)):
         #if the grain would go past the end of the sound file, just take what's left
         if audioIndex + grainSize > len(audio):
-            grainEnd = len(audio)
-            sample = audio[audioIndex:grainEnd]
+            continue
         else:
             grainEnd = audioIndex + grainSize
             sample = audio[audioIndex:grainEnd]

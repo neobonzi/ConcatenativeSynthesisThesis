@@ -1,0 +1,6 @@
+Taken from:
+"Ditelo, o fiumi" from Monteverdi's Lagrime d'amante al sepolcro dell'Amata
+http://web.mit.edu/21m.405/www/Multimedia.html
+
+Observations:
+Pitch seems to result in a much choppier sound, possibly indicating signal energy not being taken care of. Will try with LogBinergies next. 

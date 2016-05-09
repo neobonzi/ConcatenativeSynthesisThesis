@@ -38,6 +38,12 @@ def main():
     if(args.shape or args.all):
         analyzeAllSpectralShape()
 
+    if(args.envelopeshape or args.all):
+        analyzeAllEnvelopeShape()
+
+    if(args.rolloff or args.all):
+        analyzeAllRolloff()
+
     if(args.zcr or args.all):
         analyzeAllZeroCrossingRate()
 
@@ -86,6 +92,33 @@ def analyzePitch(grain):
 
     return pitchFreq
 
+
+#Fraction of bins at which 85% of energy is at lower frequencies
+def analyzeAllRolloff():
+    client = MongoClient()
+    db = client.audiograins 
+    grainEntries = db.grains
+
+
+    query = grainEntries.find({ "rolloff" : { "$exists": False }})
+    print("Analyzing Rolloff for " + str(query.count()) + " grains")
+
+    for grain in tqdm(query):
+        update = {"rolloff" : analyzeZeroCrossingRate(grain)}
+        grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
+
+def analyzeRolloff(grain):
+    blockSize = grain["frameCount"]
+    stepSize = grain["frameCount"]
+    fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
+    fp.addFeature('rolloff: SpectralRolloff blockSize=' + blockSize + ' stepSize=' + stepSize)
+    engine = Engine()
+    engine.load(fp.getDataFlow())
+    afp = AudioFileProcessor()
+    afp.processFile(engine, grain["file"])
+    feats = engine.readAllOutputs()
+    return feats["rolloff"][0][0]
+
 def analyzeAllZeroCrossingRate():
     client = MongoClient()
     db = client.audiograins 
@@ -106,9 +139,9 @@ def analyzeZeroCrossingRate(grain):
     fp.addFeature('zcr: ZCR blockSize=' + blockSize + ' stepSize=' + stepSize)
     engine = Engine()
     engine.load(fp.getDataFlow())
-    (rate, data) = wav.read(grain["file"])
-    data = numpy.array([data.astype(numpy.float64)]);
-    feats = engine.processAudio(data)
+    afp = AudioFileProcessor()
+    afp.processFile(engine, grain["file"])
+    feats = engine.readAllOutputs()
     return feats["zcr"][0][0]
 
 def analyzeAllSpectralShape():
@@ -121,7 +154,6 @@ def analyzeAllSpectralShape():
 
     for grain in tqdm(query):
         try:
-            print(grain["_id"])
             centroid, spread, skewness, kurtosis = analyzeSpectralShape(grain)
         except Exception:
             grainEntries.remove({_id : grain["_id"]})
@@ -141,10 +173,47 @@ def analyzeSpectralShape(grain):
         fp.addFeature('spectralShape: SpectralShapeStatistics blockSize=' + blockSize + ' stepSize=' + stepSize)
         engine = Engine()
         engine.load(fp.getDataFlow())
-        (rate, data) = wavfile.read(grain["file"])
-        data = numpy.array([data.astype(numpy.float64)]);
-        feats = engine.processAudio(data)
+        afp = AudioFileProcessor()
+        afp.processFile(engine, grain["file"])
+        feats = engine.readAllOutputs()
         return (feats["spectralShape"][0][0], feats["spectralShape"][0][1], feats["spectralShape"][0][2], feats["spectralShape"][0][3])
+    except Exception:
+        print "cannot process " + str(grain)
+
+
+def analyzeAllEnvelopeShape():
+    client = MongoClient()
+    db = client.audiograins 
+    grainEntries = db.grains
+
+    query = grainEntries.find({ "env_centroid" : { "$exists": False }})
+    print("Analyzing Envelope Shape for " + str(query.count()) + " grains")
+
+    for grain in tqdm(query):
+        try:
+            centroid, spread, skewness, kurtosis = analyzeSpectralShape(grain)
+        except Exception:
+            grainEntries.remove({_id : grain["_id"]})
+            continue
+        update = {"env_centroid" : centroid,
+                  "env_spread"   : spread,
+                  "env_skewness" : skewness,
+                  "env_kurtosis" : kurtosis}
+        grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
+
+def analyzeEnvelopeShape(grain):
+    blockSize = grain["frameCount"]
+    stepSize = grain["frameCount"]
+    #print(str(grain))
+    try:
+        fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
+        fp.addFeature('envelopeShape: EnvelopeShapeStatistics blockSize=' + blockSize + ' stepSize=' + stepSize)
+        engine = Engine()
+        engine.load(fp.getDataFlow())
+        afp = AudioFileProcessor()
+        afp.processFile(engine, grain["file"])
+        feats = engine.readAllOutputs()
+        return (feats["envelopeShape"][0][0], feats["envelopeShape"][0][1], feats["envelopeShape"][0][2], feats["envelopShape"][0][3])
     except Exception:
         print "cannot process " + str(grain)
 
@@ -152,7 +221,6 @@ def analyzeAllEnergy():
     client = MongoClient()
     db = client.audiograins 
     grainEntries = db.grains
-
 
     query = grainEntries.find({ "energy" : { "$exists": False }})
     print("Analyzing Energy for " + str(query.count()) + " grains")
@@ -168,9 +236,9 @@ def analyzeEnergy(grain):
     fp.addFeature('energy: Energy blockSize=' + blockSize + ' stepSize=' + stepSize)
     engine = Engine()
     engine.load(fp.getDataFlow())
-    (rate, data) = wavfile.read(grain["file"])
-    data = numpy.array([data.astype(numpy.float64)]);
-    feats = engine.processAudio(data)
+    afp = AudioFileProcessor()
+    afp.processFile(engine, grain["file"])
+    feats = engine.readAllOutputs();
     return feats["energy"][0][0] 
 
 def analyzeAllXBins():
@@ -213,7 +281,7 @@ def analyzeAllLogBinergy():
 
 def analyzeLogBinergy(grain):
     rate, data = wav.read(grain["file"])
-    numBins = 20
+    numBins = 13
     data = numpy.array(data, dtype=float)
     f, Pxx_den = signal.periodogram(data, fs=rate, window='hanning', return_onesided=True, scaling='spectrum', axis=-1)
 
@@ -247,7 +315,6 @@ def getLogBinWeight(index, bins, binNum):
         slope = (1 / float((bins[binNum] - bins[binNum - 1])))
         return (slope * (index - bins[binNum - 1]))
     elif(bins[binNum] <= index and index <= bins[binNum + 1]):
-        print("Bin num: " + str(binNum))
         #return ((bins[binNum + 1] - index) / float((bins[binNum + 1] - bins[binNum])))
         slope = (-1 / float((bins[binNum + 1] - bins[binNum])))
         return 1 + (slope * (index - bins[binNum]))
@@ -359,54 +426,21 @@ def analyzeAllHarmonicRatios():
     client.close()
 
 def analyzeHarmonicRatios(grain):
-    rate, data = wav.read(grain["file"])
-    numHarmonics = 4
-    data = numpy.array(data, dtype=float)
-    #data = data * numpy.hanning(float(grain["frameCount"]))
-    f, Pxx_den = signal.periodogram(data, fs=rate, window='hanning', return_onesided=True, scaling='spectrum', axis=-1)
-   
-    if(len(Pxx_den) < 50):
-        return None
-
-    numBins = len(Pxx_den)
-    mostEnergy = 0
-    mostEnergyBinIndex = 0
-
-    #Find the bin with the most energy
-    for binNum in range(1,numBins):
-        if(mostEnergy < Pxx_den[binNum]):
-            mostEnergy = Pxx_den[binNum]
-            mostEnergyBinIndex = binNum
-
-    # Sometimes the data is bad, skip
-    if (mostEnergy == 0):
-        return []
-    #print("Most energy " + str(mostEnergy) + " at bin: " + str(mostEnergyBinIndex) + " of " + str(len(Pxx_den)) + " bins")
+    blockSize = grain["frameCount"]
+    stepSize = grain["frameCount"]
+    #print(str(grain))
+    try:
+        fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
+        fp.addFeature('envelopeShape: Chroma2 stepSize=' + stepSize)
+        engine = Engine()
+        engine.load(fp.getDataFlow())
+        afp = AudioFileProcessor()
+        afp.processFile(engine, grain["file"])
+        feats = engine.readAllOutputs()
+        return (feats["envelopeShape"][0][0], feats["envelopeShape"][0][1], feats["envelopeShape"][0][2], feats["envelopShape"][0][3])
+    except Exception:
+        print "cannot process " + str(grain)
     
-    ratios = []
-
-    prevEnergy = mostEnergy
-
-    for harmonicBin in xrange(mostEnergyBinIndex + mostEnergyBinIndex, len(Pxx_den), mostEnergyBinIndex):
-        #print("Looking at bin " + str(harmonicBin))
-        curEnergy = float(Pxx_den[harmonicBin])
-        curRatio = prevEnergy / curEnergy
-        prevEnergy = curEnergy
-        #print("Bin: " + str(harmonicBin) + " with energy " + str(Pxx_den[harmonicBin]) + " ratio " + str(curRatio)) 
-        ratios.append(curRatio)
-
-    # graph periodogram if we didnt get enough ratios, see whats going on
-    # also log some data
-    if (len(ratios) - 1) >= numHarmonics:
-        print("Problem with " + grain["file"] + ", number of ratios: " + str(len(ratios)))
-        print("Highest energy at " + str(f[mostEnergyBinIndex]) + " Hz with energy " + str(mostEnergy))
-        plt.semilogy(f, Pxx_den)
-        plt.xlabel('frequency [Hz]')
-        plt.ylabel('PSD [V**2/Hz]')
-        plt.savefig("figures/" + grain["file"] + ".png")
-        plt.clf()
-    return ratios
-
 
 
 def parseArgs():
@@ -416,6 +450,7 @@ def parseArgs():
     parser.add_argument('--pitch', dest="pitch", action="store_true", help="Include to not compute pitches");
     parser.add_argument('--energy', dest="energy", action="store_true", help="Compute RMS energy for grain");
     parser.add_argument('--shape', dest="shape", action="store_true", help="Compute the spectral shape data for grain");
+    parser.add_argument('--rolloff', dest="rolloff", action="store_true", help="Compute the spectral roll-off frequency")
     parser.add_argument('--all', dest="all", action="store_true", help="Compute all available features");
     parser.add_argument('--zcr', dest="zcr", action="store_true", help="Compute Zero Crossing Rate for grains");
     parser.add_argument('--xbins', dest='xbins', action="store_true", help="Compute X Bins for grains");
@@ -427,6 +462,8 @@ def parseArgs():
     parser.set_defaults(clear=False)
     parser.set_defaults(mfcc=False)
     parser.set_defaults(shape=False)
+    parser.set_defaults(envelopeshape=False)
+    parser.set_defaults(rolloff=False)
     parser.set_defaults(zcr=False)
     parser.set_defaults(energy=False)
     parser.set_defaults(xbins=False)
