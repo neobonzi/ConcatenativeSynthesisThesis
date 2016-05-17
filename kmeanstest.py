@@ -11,8 +11,8 @@ from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
 from pydub import AudioSegment
 
-numClusters = 20
-estimator = KMeans(n_clusters=numClusters)
+numClusters = 10
+estimator = KMeans(n_clusters=numClusters, n_jobs=-1, n_init=20, precompute_distances='auto')
 
 #Gather grains into numpy array
 client = MongoClient()
@@ -26,6 +26,7 @@ numXBins = 100
 numBinergies = 20
 numLogBinergies = 13
 numMFCCs = 13
+numRatios = 4
 
 features=[]
 #features.extend(["rolloff", "spread"])
@@ -45,10 +46,14 @@ features=[]
 #    features.append(nameFormat % binNum)
 
 
-#nameFormat = "mfcc%02d"
-nameFormat = "mfcc%0" + str(len(str(numMFCCs))) + "d"
-for binNum in range(0,numMFCCs):
+nameFormat = "hratio%02d"
+for binNum in range(numRatios):
     features.append(nameFormat % binNum)
+
+#nameFormat = "mfcc%02d"
+#nameFormat = "mfcc%0" + str(len(str(numMFCCs))) + "d"
+#for binNum in range(0,numMFCCs):
+#    features.append(nameFormat % binNum)
 
 numFeatures = len(features)
 
@@ -66,6 +71,10 @@ for grain in tqdm(query):
 print("Data pulled")
 ## Fit data, label, and put files in buckets
 print("Normalizing Data")
+if np.any(np.isnan(data)):
+    print("Some data is NaN")
+if not np.all(np.isfinite(data)):
+    print("Some data is infinite")
 normalize(data)
 
 estimator.fit(data)

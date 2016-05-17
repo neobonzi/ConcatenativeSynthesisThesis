@@ -4,6 +4,7 @@ import argparse
 import os
 import fpectl
 import math
+import wavefile
 from features import logfbank
 from features import fbank
 from yaafelib import *
@@ -412,7 +413,6 @@ def analyzeAllHarmonicRatios():
     client = MongoClient()
     db = client.audiograins
     grainEntries = db.grains
-    numHarmonics = 4
 
     query = grainEntries.find({ "hratio00" : {"$exists" : False}})
     print("Analyzing Harmonic Ratios for " + str(query.count()) + " grains")
@@ -423,24 +423,58 @@ def analyzeAllHarmonicRatios():
             for ratioIndex in range(0, len(ratios)):
                 update = {"hratio" + format(ratioIndex, '02') : ratios[ratioIndex]}
                 grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
+        else:
+            print("Removed grain due to lack of harmonics")
+            grainEntries.remove({"_id": grain["_id"]})
     client.close()
 
 def analyzeHarmonicRatios(grain):
-    blockSize = grain["frameCount"]
-    stepSize = grain["frameCount"]
-    #print(str(grain))
-    try:
-        fp = FeaturePlan(sample_rate=int(grain["sampleRate"]))
-        fp.addFeature('envelopeShape: Chroma2 stepSize=' + stepSize)
-        engine = Engine()
-        engine.load(fp.getDataFlow())
-        afp = AudioFileProcessor()
-        afp.processFile(engine, grain["file"])
-        feats = engine.readAllOutputs()
-        return (feats["envelopeShape"][0][0], feats["envelopeShape"][0][1], feats["envelopeShape"][0][2], feats["envelopShape"][0][3])
-    except Exception:
-        print "cannot process " + str(grain)
+    #Maximum to get 4 harmonics
+    maxPermissableFreq = 1381.0
+    numHarmonics = 4
+    w = wavefile.load(grain["file"])
+    data = w[1][0]
+    s = source(grain["file"], w[0], len(data))
+    samplerate = s.samplerate
+
+    # Compute the fundamental using the "yin" algorithm
+    pitch_o = pitch("yin", len(data), len(data), samplerate)
+    samples, read = s()
+    fundamental = pitch_o(samples)[0]
+
+    if (fundamental > maxPermissableFreq):
+        return None
+
+    # Get the periodogram to get energies at harmonics
+    data = data * numpy.hanning(len(data))
+    f, Pxx_den = signal.periodogram(data, w[0])
     
+    # Set the current harmonic to be twice the fundamental
+    fundEnergy = Pxx_den[freqToBin(f, fundamental)]
+    curHarm = fundamental * 2
+    curHarmCount = 0
+    ratios = []
+
+    while(curHarmCount < numHarmonics):
+        ratio = fundEnergy / Pxx_den[freqToBin(f, curHarm)]
+        #Do not allow infinites, probably caused by 0 energy
+        if math.isnan(ratio) or math.isinf(ratio):
+            print("Ratio " + str(curHarmCount) + " is " + str(ratio))
+            return None
+        ratios.append(fundEnergy / Pxx_den[freqToBin(f, curHarm)])
+        curHarm *= 2
+        curHarmCount += 1
+
+    return ratios
+
+# Return a bin number in which one can find the given frequency
+def freqToBin(freqs, toFind):
+    binNum = 0
+
+    for freq in freqs:
+        if freq >= toFind:
+            return binNum
+        binNum += 1 
 
 
 def parseArgs():
