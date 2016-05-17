@@ -1,243 +1,152 @@
-#!/usr/bin/env python
-from sklearn.neighbors import BallTree
-from sklearn import preprocessing
-from sklearn.neighbors import LSHForest
-from tqdm import *
-from pymongo import MongoClient
-from pydub import AudioSegment
-import redis
-from nearpy.storage import RedisStorage
-from nearpy import Engine
-from nearpy.hashes import RandomBinaryProjections
-import wave
-import argparse
-import subprocess
-import sys
 import numpy as np
-import pickle
-import granulizer
-import analyzer
+import matplotlib.pyplot as plt
+import argparse
+from random import shuffle
+from mpl_toolkits.mplot3d import Axes3D
+from tqdm import *
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import normalize
+from pymongo import MongoClient
+from scipy.spatial import distance
+from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
+from pydub import AudioSegment
 
 def main():
-    args = __parseArgs()
+    args = parseArgs()
 
-    if(args.build):
-        if(args.classifier == "ball"):
-            buildTree()
-        elif(args.classifier == "LSH"):
-            buildLSH()
-
-
-    if(args.synthesize):
-        if(args.classifier == "ball"):
-            process(args.template)
-        elif(args.classifier == "LSH"):
-            processLSH(args.template)
-        
-def buildLSH():
+    numClusters = args.numClusters
+    estimator = KMeans(n_clusters=numClusters, n_jobs=-1, n_init=20, precompute_distances='auto')
+    print("Num Clusters: " + str(numClusters))
+    #Gather grains into numpy array
     client = MongoClient()
     db = client.audiograins
     grainEntries = db.grains
-
     query = grainEntries.find({})
-    indexToIds = [None] * query.count()    
-    data = np.empty([query.count(), 16])
     dataIndex = 0
-    print("Building tree")
-    for grain in tqdm(query):
-        data[dataIndex][0] = grain["mfcc00"] 
-        data[dataIndex][1] = grain["mfcc01"] 
-        data[dataIndex][2] = grain["mfcc02"] 
-        data[dataIndex][3] = grain["mfcc03"]
-        data[dataIndex][4] = grain["mfcc04"]
-        data[dataIndex][5] = grain["mfcc05"]
-        data[dataIndex][6] = grain["mfcc06"]
-        data[dataIndex][7] = grain["mfcc07"]
-        data[dataIndex][8] = grain["mfcc08"]
-        data[dataIndex][9] = grain["mfcc09"]
-        data[dataIndex][10] = grain["mfcc10"] 
-        data[dataIndex][11] = grain["mfcc11"]
-        data[dataIndex][12] = grain["mfcc12"]
-        data[dataIndex][13] = grain["pitch"]
-        #data[dataIndex][14] = grain["energy"]
-        #data[dataIndex][15] = grain["kurtosis"]
-        #data[dataIndex][16] = grain["skewness"]
-        #data[dataIndex][17] = grain["spread"]
-        #data[dataIndex][18] = grain["centroid"]
-        #data[dataIndex][15] = grain["zcr"]
-        indexToIds[dataIndex] = grain["_id"]
-        dataIndex += 1
-    
-    normalizer = preprocessing.Normalizer().fit(data) 
-    data = normalizer.transform(data)
-    tree = LSHForest(random_state=42)
-    tree.fit(data)
-    f = open('classifier.pickle', 'wb')
-    pickle.dump(normalizer, open('normalizer.pickle', 'wb'))
-    pickle.dump(indexToIds, open('indexToIds.pickle', 'wb'))
-    pickle.dump(tree, f)
+    indexToFilename = [None] * query.count()
 
-def processLSH(fileName):
-    client = MongoClient()
-    db = client.audiograins
-    grainEntries = db.grains
-    song = None
-    songFile = open(fileName)
-    logfile = open('logfile.log', 'w')
-    print("converting to mono")
-    monoFilename = "mono" + fileName
-    subprocess.check_call(["ffmpeg -i " + fileName + " -ac 1 -threads 2 " + monoFilename], close_fds=True, shell=True)
+    numXBins = args.numXBins
+    numBinergies = args.numBinergies
+    numLogBinergies = args.numLogBinergies
+    numMFCCs = args.numMFCCs
+    numRatios = args.numRatios
 
-    grains = granulizer.chopSound(monoFilename, 20, "inputGrains")
-    print("Loading pickled files into memory...")
-    normalizer = pickle.load(open("normalizer.pickle"))
-    classifier = pickle.load(open("classifier.pickle"))
-    indexToIds = pickle.load(open("indexToIds.pickle"))    
-    print("Matching grains...")
-    for grain in tqdm(grains):
-        #Analyze all stats for grain
-        dataPoint = np.empty([1, 16])
-        mfccs = analyzer.analyzeMFCC(grain)
-        dataPoint[0][0] = mfccs[0]
-        dataPoint[0][1] = mfccs[1]
-        dataPoint[0][2] = mfccs[2]
-        dataPoint[0][3] = mfccs[3]
-        dataPoint[0][4] = mfccs[4]
-        dataPoint[0][5] = mfccs[5]
-        dataPoint[0][6] = mfccs[6]
-        dataPoint[0][7] = mfccs[7]
-        dataPoint[0][8] = mfccs[8]
-        dataPoint[0][9] = mfccs[9]
-        dataPoint[0][10] = mfccs[10]
-        dataPoint[0][11] = mfccs[11]
-        dataPoint[0][12] = mfccs[12]
-        dataPoint[0][13] = analyzer.analyzePitch(grain)
-        dataPoint[0][14] = analyzer.analyzeEnergy(grain)
-        #dataPoint[15] = kurtosis
-        #dataPoint[16] = skewness
-        #dataPoint[17] = spread
-        #dataPoint[18] = centroid
-        dataPoint[0][15] = analyzer.analyzeZeroCrossingRate(grain)
-        dist, ind = classifier.kneighbors(normalizer.transform(dataPoint), n_neighbors=1) 
-        logfile.write('DataPoint: ' + str(ind[0][0]) + ' at Dist: ' + str(dist[0][0]))
-        grainId = indexToIds[ind[0][0]]
-        query = grainEntries.find({"_id" : grainId})
-        grain = AudioSegment.from_wav(query[0]["file"])
-        if song is None:
-            song = grain
-        else:
-            song = song.append(grain, crossfade=0)
+    features=[]
 
-    song.export("remix.wav", format='wav')
+    if args.rolloff:
+        features.extend(["rolloff"])
 
-def process(fileName):
-    client = MongoClient()
-    db = client.audiograins
-    grainEntries = db.grains
-    song = None
-    songFile = open(fileName)
-    print("converting to mono")
-    monoFilename = "mono" + fileName
-    subprocess.check_call(["ffmpeg -i " + fileName + " -ac 1 -threads 2 " + monoFilename], close_fds=True, shell=True)
+    if args.energy:
+        features.extend(["energy"])
 
-    grains = granulizer.chopSound(monoFilename, 20, "inputGrains")
-    print("Loading pickled files into memory...")
-    normalizer = pickle.load(open("normalizer.pickle"))
-    classifier = pickle.load(open("classifier.pickle"))
-    indexToIds = pickle.load(open("indexToIds.pickle"))    
-    print("Matching grains...")
-    for grain in tqdm(grains):
-        #Analyze all stats for grain
-        dataPoint = np.empty([1, 16])
-        mfccs = analyzer.analyzeMFCC(grain)
-        #dataPoint[0][0] = mfccs[0]
-        #dataPoint[0][1] = mfccs[1]
-        #dataPoint[0][2] = mfccs[2]
-        #dataPoint[0][3] = mfccs[3]
-        #dataPoint[0][4] = mfccs[4]
-        #dataPoint[0][5] = mfccs[5]
-        #dataPoint[0][6] = mfccs[6]
-        #dataPoint[0][7] = mfccs[7]
-        #dataPoint[0][8] = mfccs[8]
-        #dataPoint[0][9] = mfccs[9]
-        #dataPoint[0][10] = mfccs[10]
-        #dataPoint[0][11] = mfccs[11]
-        #dataPoint[0][12] = mfccs[12]
-        #dataPoint[0][13] = analyzer.analyzePitch(grain)
-        #dataPoint[0][14] = analyzer.analyzeEnergy(grain)
-        #dataPoint[15] = kurtosis
-        #dataPoint[16] = skewness
-        #dataPoint[17] = spread
-        #dataPoint[18] = centroid
-        #dataPoint[0][15] = analyzer.analyzeZeroCrossingRate(grain)
-        dataPoint[0][0] = analyzer.analyzePitch(grain)
-        dist, ind = classifier.query(normalizer.transform(dataPoint), k=2) 
-        grainId = indexToIds[ind[0][0]]
-        query = grainEntries.find({"_id" : grainId})
-        grain = AudioSegment.from_wav(query[0]["file"])
-        if song is None:
-            song = grain
-        else:
-            song = song.append(grain, crossfade=0)
+    if args.zcr:
+        features.extend(["zcr"])
 
-    song.export("G_Scale_Pitch_Only_0msfade.wav", format='wav')
+    if args.centroid:
+        features.extend(["centroid"])
+
+    if args.spread:
+        features.extend(["spread"])
+
+    if args.skewness:
+        features.extend(["skewness"])
+
+    if args.kurtosis:
+        features.extend(["kurtosis"])
 
 
-def buildTree():
-    client = MongoClient()
-    db = client.audiograins
-    grainEntries = db.grains
+    nameFormat = "binergy%0" + str(len(str(numBinergies))) + "d"
+    for binNum in range(numBinergies):
+        features.append(nameFormat % binNum)
 
-    query = grainEntries.find({})
-    indexToIds = [None] * query.count()    
-    data = np.empty([query.count(), 16])
+    nameFormat = "xBin%0" + str(len(str(numXBins))) + "d"
+    for binNum in range(numBinergies):
+        features.append(nameFormat % binNum)
+
+    nameFormat = "logbinergies%0" + str(len(str(numLogBinergies))) + "d"
+    for binNum in range(numLogBinergies):
+        features.append(nameFormat % binNum)
+
+    nameFormat = "hratio%02d"
+    for binNum in range(numRatios):
+        features.append(nameFormat % binNum)
+
+    nameFormat = "mfcc%0" + str(len(str(numMFCCs))) + "d"
+    for binNum in range(0,numMFCCs):
+        features.append(nameFormat % binNum)
+
+    numFeatures = len(features)
+
+    data = np.empty([query.count(), numFeatures])
+
     dataIndex = 0
-    print("Building tree")
     for grain in tqdm(query):
-        #data[dataIndex][0] = grain["mfcc00"] 
-        #data[dataIndex][1] = grain["mfcc01"] 
-        #data[dataIndex][2] = grain["mfcc02"] 
-        #data[dataIndex][3] = grain["mfcc03"]
-        #data[dataIndex][4] = grain["mfcc04"]
-        #data[dataIndex][5] = grain["mfcc05"]
-        #data[dataIndex][6] = grain["mfcc06"]
-        #data[dataIndex][7] = grain["mfcc07"]
-        #data[dataIndex][8] = grain["mfcc08"]
-        #data[dataIndex][9] = grain["mfcc09"]
-        #data[dataIndex][10] = grain["mfcc10"] 
-        #data[dataIndex][11] = grain["mfcc11"]
-        #data[dataIndex][12] = grain["mfcc12"]
-        #data[dataIndex][13] = grain["pitch"]
-        #data[dataIndex][14] = grain["energy"]
-        #data[dataIndex][15] = grain["kurtosis"]
-        #data[dataIndex][16] = grain["skewness"]
-        #data[dataIndex][17] = grain["spread"]
-        #data[dataIndex][18] = grain["centroid"]
-        #data[dataIndex][15] = grain["zcr"]
-        data[dataIndex][0] = grain["pitch"]
-        indexToIds[dataIndex] = grain["_id"]
+        featureNum = 0
+        for feature in features:
+            data[dataIndex][featureNum] = grain[feature]
+            featureNum += 1
+        indexToFilename[dataIndex] = grain["file"]
         dataIndex += 1
-    
-    normalizer = preprocessing.Normalizer().fit(data) 
-    data = normalizer.transform(data)
-    tree = BallTree(data, leaf_size=2)
-    f = open('classifier.pickle', 'wb')
-    pickle.dump(normalizer, open('normalizer.pickle', 'wb'))
-    pickle.dump(indexToIds, open('indexToIds.pickle', 'wb'))
-    pickle.dump(tree, f)
 
-def __parseArgs():
-    parser = argparse.ArgumentParser(description='Classify a set of grains from a mongodb repository')
-    parser.add_argument('--build', dest="build", action="store_true", help="Build the nearest neighbor ball tree")
-    parser.add_argument('--synthesize', dest="synthesize", action="store_true", 
-help="Reproduce an audio file using grains")
-    parser.add_argument("-template", dest="template") 
-    parser.add_argument("-grainSize", dest="grainSize")
-    parser.add_argument("-classifier", dest="classifier")
-    parser.set_defaults(classifier="LSH")
-    parser.set_defaults(grainSize=20)
-    parser.set_defaults(build=False)
-    parser.set_defaults(synthesize=False) 
+    print("Data pulled")
+    ## Fit data, label, and put files in buckets
+    print("Normalizing Data")
+    if np.any(np.isnan(data)):
+        print("Some data is NaN")
+    if not np.all(np.isfinite(data)):
+        print("Some data is infinite")
+    normalize(data)
+
+    estimator.fit(data)
+    buckets = [None] * numClusters
+    dataIndex = 0
+    for label in estimator.labels_:
+        if buckets[label] is None:
+            buckets[label] = []
+        buckets[label].append(indexToFilename[dataIndex])
+        dataIndex += 1
+
+    bucketIndex = 0
+    for bucket in buckets:
+        song = None
+        shuffle(bucket)
+        print("Writing sound file for bucket " + str(bucketIndex) + " With " + str(len(bucket)) + "samples")
+        for grainFile in tqdm(bucket):
+            grain = AudioSegment.from_wav(grainFile)
+            if song is None:
+                song = grain
+            else:
+                song = song.append(grain, crossfade=10)
+        song.export("soundGroups/grouping" + str(bucketIndex) + ".wav", format="wav")
+        bucketIndex += 1
+
+    print("Silhouette score:" + metrics.silhouette_score(data, estimator.labels_, metric='euclidean')) 
+
+def parseArgs():
+    parser = argparse.ArgumentParser(description='Cluster grains based on values computed using an analyzer whose results are available in a mongo database')
+    parser.add_argument('-numClusters', '--numClusters', nargs='?', default=10, type=int)
+    parser.add_argument('-numXBins', '--numXBins', nargs='?', default=0, type=int)
+    parser.add_argument('-numBinergies', '--numBinergies', nargs='?', default=0, type=int)
+    parser.add_argument('-numLogBinergies', '--numLogBinergies', nargs='?', default=0, type=int)
+    parser.add_argument('-numMFCCs', '--numMFCCs', nargs='?', default=0, type=int)
+    parser.add_argument('-numRatios', '--numRatios', nargs='?', default=0, type=int)
+    parser.add_argument('--rolloff', dest='rolloff', action='store_true', help='use spectral rolloff in clustering')
+    parser.add_argument('--energy', dest='energy', action='store_true', help='use signal energy in clustering')
+    parser.add_argument('--zcr', dest='zcr', action='store_true', help='use signal zero crossing rate in clustering')
+    parser.add_argument('--centroid', dest='centroid', action='store_true', help='use the spectral centroid in clustering')
+    parser.add_argument('--spread', dest='spread', action='store_true', help='use the spectral spread in clustering')
+    parser.add_argument('--skewness', dest='skewness', action='store_true', help='use the spectral skewness in clustering')
+    parser.add_argument('--kurtosis', dest='kurtosis', action='store_true', help='use the spectral kurtosis in clustering')
+
+    #Arg defaults
+    parser.set_defaults(rolloff=False)
+    parser.set_defaults(energy=False)
+    parser.set_defaults(zcr=False)
+    parser.set_defaults(centroid=False)
+    parser.set_defaults(spread=False)
+    parser.set_defaults(skewness=False)
+    parser.set_defaults(kurtosis=False)
 
     return parser.parse_args()
 
