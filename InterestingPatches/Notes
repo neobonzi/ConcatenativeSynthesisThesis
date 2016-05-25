@@ -1,8 +1,0 @@
-Use of rolloff, skewness and spread creates quite a bit of "jitter". 
-Show an example of "Jittery" choral piece vs "MFCC only" choral piece.
-
-Log binergies not as smooth, perhaps because of no overlap and correlation?
-
-Use SIMPLER to display patches
-
-MFCC_PITCH_VS_MFCC_WITHOUT_PITCH_CHORAL grouping 0, 6, 10 are cool 
