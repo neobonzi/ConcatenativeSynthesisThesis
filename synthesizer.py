@@ -61,7 +61,7 @@ def main():
         features.append(nameFormat % binNum)
 
     nameFormat = "xBin%0" + str(len(str(numXBins))) + "d"
-    for binNum in range(numBinergies):
+    for binNum in range(numXBins):
         features.append(nameFormat % binNum)
 
     nameFormat = "logbinergies%0" + str(len(str(numLogBinergies))) + "d"
@@ -72,7 +72,7 @@ def main():
     for binNum in range(numRatios):
         features.append(nameFormat % binNum)
 
-    nameFormat = "mfcc%0" + str(len(str(numMFCCs))) + "d"
+    nameFormat = "mfcc%02d"
     for binNum in range(0,numMFCCs):
         features.append(nameFormat % binNum)
 
@@ -121,7 +121,7 @@ def main():
         song.export("soundGroups/grouping" + str(bucketIndex) + ".wav", format="wav")
         bucketIndex += 1
 
-    print("Silhouette score:" + metrics.silhouette_score(data, estimator.labels_, metric='euclidean')) 
+    print("Silhouette score:" + str(silhouette_score(data, estimator.labels_, metric='euclidean'))) 
 
 def parseArgs():
     parser = argparse.ArgumentParser(description='Cluster grains based on values computed using an analyzer whose results are available in a mongo database')

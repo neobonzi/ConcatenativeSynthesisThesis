@@ -261,6 +261,15 @@ def analyzeXBins(grain):
     energies = logfbank(signal=sig, samplerate=rate, winlen=.020, winstep=.020, nfilt=100, nfft=windowSize)   
     return energies.tolist()
 
+
+
+def analyzeLogBinergy(grain):
+    windowSize = int(float(grain["frameCount"]))
+    (rate,sig) = wav.read(grain["file"])
+    windowedSignal = numpy.multiply(signal.hamming(windowSize), sig)
+    energies = logfbank(signal=sig, samplerate=rate, winlen=.020, winstep=.020, nfilt=13, nfft=windowSize)   
+    return energies.tolist()[0]
+
 def analyzeAllLogBinergy():
     client = MongoClient()
     db = client.audiograins
@@ -280,63 +289,6 @@ def analyzeAllLogBinergy():
             grainEntries.update_one({"_id": grain["_id"]}, {"$set" : update})
             energyIndex += 1
 
-def analyzeLogBinergy(grain):
-    rate, data = wav.read(grain["file"])
-    numBins = 13
-    data = numpy.array(data, dtype=float)
-    f, Pxx_den = signal.periodogram(data, fs=rate, window='hanning', return_onesided=True, scaling='spectrum', axis=-1)
-
-    energies = [0] * numBins
-
-    if(len(Pxx_den) < 50):
-        return None
-
-    bins = getLogBins(numBins, rate / 2, 0)
-
-
-    for binNum in range(numBins):
-        for index in range(len(f)):
-            #print("Freq: " + str(f[index]))
-            binWeight = getLogBinWeight(f[index], bins, binNum + 1)
-            #print("Bin Weight: " + str(binWeight))
-            energies[binNum] += Pxx_den[index] * binWeight
-            #print("Energy: " + str(energies[binNum]))
-
-        #print("Energy in bin " + str(binNum) + ": " + str(energies[binNum]))
-    return energies
-
-
-def getLogBinWeight(index, bins, binNum):
-
-    #print("index: " + str(index) + " binIndex: " + str(binNum) + " binValue: " + str(bins[binNum]))
-    if(index < bins[binNum - 1]):
-        return 0
-    elif(bins[binNum - 1] <= index and index <= bins[binNum]):
-        #return ((index - bins[binNum-1]) / float((bins[binNum] - bins[binNum - 1])))
-        slope = (1 / float((bins[binNum] - bins[binNum - 1])))
-        return (slope * (index - bins[binNum - 1]))
-    elif(bins[binNum] <= index and index <= bins[binNum + 1]):
-        #return ((bins[binNum + 1] - index) / float((bins[binNum + 1] - bins[binNum])))
-        slope = (-1 / float((bins[binNum + 1] - bins[binNum])))
-        return 1 + (slope * (index - bins[binNum]))
-    else:
-        return 0
-
-def getLogBins(numBins, maxFreq, minFreq):
-    logMax = math.log1p(maxFreq + 1)
-    logMin = math.log1p(minFreq + 1)
-    logStep = (logMax - logMin) / float(numBins)
-
-    bins = []
-
-
-    for bindex in numpy.arange(logMin, logMax, logStep):
-        bins.append(math.floor(math.exp(bindex) - 1))
-
-    bins.append(math.floor(math.exp(logMax) - 1))
-
-    return bins
-
 def analyzeAllBinergies():
     client = MongoClient()
     db = client.audiograins
@@ -350,6 +302,7 @@ def analyzeAllBinergies():
         energies = analyzeBinergy(grain)
         energyIndex = 0
         if energies is None:
+            grainEntries.remove({"_id": grain["_id"]})
             continue
         for energy in energies:
             update = {"binergy" + format(energyIndex, '02') : energy}
@@ -364,6 +317,11 @@ def analyzeBinergy(grain):
     f, Pxx_den = signal.periodogram(data, fs=rate, window='hanning', return_onesided=True, scaling='spectrum', axis=-1)
    
     if(len(Pxx_den) < 50):
+        return None
+
+    try:
+        Pxx_den = 10 * numpy.log10(Pxx_den)
+    except Exception:
         return None
 
     binWidth = len(Pxx_den) / numBins
@@ -429,8 +387,8 @@ def analyzeAllHarmonicRatios():
     client.close()
 
 def analyzeHarmonicRatios(grain):
+    maxPermissableFreq = 4409
     #Maximum to get 4 harmonics
-    maxPermissableFreq = 1381.0
     numHarmonics = 4
     w = wavefile.load(grain["file"])
     data = w[1][0]
@@ -448,6 +406,7 @@ def analyzeHarmonicRatios(grain):
     # Get the periodogram to get energies at harmonics
     data = data * numpy.hanning(len(data))
     f, Pxx_den = signal.periodogram(data, w[0])
+    Pxx_den = 10 * numpy.log10(Pxx_den)
     
     # Set the current harmonic to be twice the fundamental
     fundEnergy = Pxx_den[freqToBin(f, fundamental)]
@@ -462,7 +421,7 @@ def analyzeHarmonicRatios(grain):
             print("Ratio " + str(curHarmCount) + " is " + str(ratio))
             return None
         ratios.append(fundEnergy / Pxx_den[freqToBin(f, curHarm)])
-        curHarm *= 2
+        curHarm += fundamental
         curHarmCount += 1
 
     return ratios
